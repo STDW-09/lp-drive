@@ -1,0 +1,15 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h2>Login</h2>
+  <form method="post" action="{{ url_for('login') }}">
+    <label>Gebruikersnaam</label>
+    <input type="text" name="username" required autocomplete="username">
+    <label>Wachtwoord</label>
+    <input type="password" name="password" required autocomplete="current-password">
+    <button type="submit">Inloggen</button>
+  </form>
+  <div class="login-info">
+    <p><strong>Wachtwoord vergeten?</strong><br>Maak een ticket aan op Discord.</p>
+    <p><strong>Nieuw account nodig?</strong><br>Maak een ticket aan op Discord.</p>
+  </div>
+{% endblock %}
