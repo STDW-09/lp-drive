@@ -1,0 +1,32 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h2>Mijn bestanden</h2>
+  <p>Gebruiker: <strong>{{ username }}</strong></p>
+  <p>Gebruik: {{ (used/1024/1024)|round(2) }} MB / {{ (limit/1024/1024)|round(0) }} MB</p>
+  <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <button type="submit">Upload</button>
+  </form>
+  <h3>Bestanden</h3>
+  {% if files %}
+    <table>
+      <thead><tr><th>Naam</th><th>Grootte (KB)</th><th>Acties</th></tr></thead>
+      <tbody>
+        {% for f in files %}
+          <tr>
+            <td>{{ f.name }}</td>
+            <td>{{ (f.size/1024)|round(2) }}</td>
+            <td>
+              <a href="{{ url_for('download', filename=f.name) }}">Download</a>
+              <form method="post" action="{{ url_for('delete_file', filename=f.name) }}" style="display:inline">
+                <button type="submit">Verwijder</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Geen bestanden</p>
+  {% endif %}
+{% endblock %}
