@@ -20,6 +20,7 @@ ADMIN_USERNAME = 'admin'
 ADMIN_PASSWORD = 'adminLP'
 
 
+# --- DATABASE --- #
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -33,15 +34,13 @@ def init_db():
             is_staff INTEGER DEFAULT 0
         )
     ''')
-    
-    # Controleer of admin bestaat
+    # Voeg admin toe als die niet bestaat
     cur.execute('SELECT id FROM users WHERE username = ?', (ADMIN_USERNAME,))
     if not cur.fetchone():
         cur.execute(
             'INSERT INTO users (username, password_hash, active, is_admin, is_staff) VALUES (?, ?, 1, 1, 0)',
             (ADMIN_USERNAME, generate_password_hash(ADMIN_PASSWORD))
         )
-    
     conn.commit()
     conn.close()
 
@@ -52,6 +51,7 @@ def get_db():
     return conn
 
 
+# --- HELPERS --- #
 def get_user_folder(username):
     folder = UPLOAD_FOLDER / username
     folder.mkdir(parents=True, exist_ok=True)
@@ -93,6 +93,7 @@ def inject_globals():
     }
 
 
+# --- ROUTES --- #
 @app.route('/')
 def index():
     if 'username' in session:
@@ -104,7 +105,7 @@ def index():
     return redirect(url_for('login'))
 
 
-# --- LOGIN / LOGOUT ---
+# --- LOGIN / LOGOUT --- #
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -113,13 +114,11 @@ def login():
         if not username or not password:
             flash('Vul alle velden in', 'danger')
             return redirect(url_for('login'))
-        
         conn = get_db()
         cur = conn.cursor()
         cur.execute('SELECT * FROM users WHERE username=? AND active=1', (username,))
         user = cur.fetchone()
         conn.close()
-        
         if user and check_password_hash(user['password_hash'], password):
             session['username'] = username
             session['user_id'] = user['id']
@@ -134,7 +133,6 @@ def login():
         else:
             flash('Ongeldige inloggegevens', 'danger')
             return redirect(url_for('login'))
-    
     return render_template('login.html')
 
 
@@ -145,7 +143,7 @@ def logout():
     return redirect(url_for('login'))
 
 
-# --- DASHBOARD ---
+# --- DASHBOARD --- #
 @app.route('/dashboard')
 def dashboard():
     if 'username' not in session:
@@ -162,32 +160,25 @@ def upload():
     if 'username' not in session:
         flash('Log eerst in', 'danger')
         return redirect(url_for('login'))
-    
     username = session['username']
     if 'file' not in request.files:
         flash('Geen bestand geselecteerd', 'danger')
         return redirect(url_for('dashboard'))
-    
     file = request.files['file']
     if file.filename == '':
         flash('Geen bestand geselecteerd', 'danger')
         return redirect(url_for('dashboard'))
-    
     filename = secure_filename(file.filename)
     if not filename:
         flash('Ongeldige bestandsnaam', 'danger')
         return redirect(url_for('dashboard'))
-    
     file.seek(0, 2)
-    file_size = file.tell()
+    size = file.tell()
     file.seek(0)
-    
-    if get_user_usage(username) + file_size > MAX_BYTES_PER_USER:
+    if get_user_usage(username) + size > MAX_BYTES_PER_USER:
         flash('Onvoldoende ruimte. Verwijder eerst bestanden.', 'danger')
         return redirect(url_for('dashboard'))
-    
-    user_folder = get_user_folder(username)
-    file.save(str(user_folder / filename))
+    file.save(get_user_folder(username) / filename)
     flash(f'Bestand "{filename}" geüpload', 'success')
     return redirect(url_for('dashboard'))
 
@@ -197,18 +188,12 @@ def download(filename):
     if 'username' not in session:
         flash('Log eerst in', 'danger')
         return redirect(url_for('login'))
-    
     username = session['username']
-    user_folder = get_user_folder(username)
     safe_filename = secure_filename(filename)
-    if not safe_filename:
+    file_path = get_user_folder(username) / safe_filename
+    if not safe_filename or not file_path.exists():
         abort(404)
-    
-    file_path = user_folder / safe_filename
-    if not file_path.exists() or not file_path.is_file():
-        abort(404)
-    
-    return send_from_directory(str(user_folder), safe_filename, as_attachment=True)
+    return send_from_directory(str(get_user_folder(username)), safe_filename, as_attachment=True)
 
 
 @app.route('/delete/<filename>', methods=['POST'])
@@ -216,12 +201,10 @@ def delete_file(filename):
     if 'username' not in session:
         flash('Log eerst in', 'danger')
         return redirect(url_for('login'))
-    
     username = session['username']
-    user_folder = get_user_folder(username)
     safe_filename = secure_filename(filename)
-    file_path = user_folder / safe_filename
-    if file_path.exists() and file_path.is_file():
+    file_path = get_user_folder(username) / safe_filename
+    if file_path.exists():
         file_path.unlink()
         flash(f'Bestand "{safe_filename}" verwijderd', 'success')
     else:
@@ -229,7 +212,41 @@ def delete_file(filename):
     return redirect(url_for('dashboard'))
 
 
-# --- INIT ---
+# --- ADMIN PANEL --- #
+@app.route('/admin')
+def admin_panel():
+    if 'username' not in session:
+        flash('Log eerst in', 'danger')
+        return redirect(url_for('login'))
+    if not is_admin():
+        flash('Geen toegang', 'danger')
+        return redirect(url_for('dashboard'))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM users ORDER BY username')
+    users = cur.fetchall()
+    conn.close()
+    return render_template('admin.html', users=users)
+
+
+# --- STAFF PANEL --- #
+@app.route('/staff')
+def staff_panel():
+    if 'username' not in session:
+        flash('Log eerst in', 'danger')
+        return redirect(url_for('login'))
+    if not is_staff_or_admin():
+        flash('Geen toegang', 'danger')
+        return redirect(url_for('dashboard'))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM users WHERE is_admin=0 ORDER BY username')
+    users = cur.fetchall()
+    conn.close()
+    return render_template('staff.html', users=users)
+
+
+# --- INIT --- #
 init_db()
 
 if __name__ == "__main__":
